@@ -18,13 +18,9 @@ exports.handler = async (event) => {
         };
     }
 
-    const userAgent = event.headers['user-agent'] || '';
-    if (!userAgent.includes('https://github.com/TryGhost/Ghost')) {
-        return {
-            statusCode: 401,
-            body: `Unauthorized`
-        };
-    }
+    // Note: User-Agent based validation was removed as Ghost v5+ may use
+    // a different UA string. The NETLIFY_KEY query parameter provides
+    // the actual authorization for these endpoints.
 
     const algoliaSettings = {
         appId: process.env.ALGOLIA_APP_ID,
