@@ -19,7 +19,8 @@ exports.handler = async (event) => {
         };
     }
 
-    if (!event.headers['user-agent'].includes('https://github.com/TryGhost/Ghost')) {
+    const userAgent = event.headers['user-agent'] || '';
+    if (!userAgent.includes('https://github.com/TryGhost/Ghost')) {
         return {
             statusCode: 401,
             body: `Unauthorized`
@@ -33,7 +34,13 @@ exports.handler = async (event) => {
     };
 
     let {post} = JSON.parse(event.body);
-    post = (post && Object.keys(post.current).length > 0 && post.current) || {};
+
+    // Handle both Ghost v4 (object) and v5 (array) payload formats
+    let current = post?.current;
+    if (Array.isArray(current)) {
+        current = current[0];
+    }
+    post = (current && Object.keys(current).length > 0 && current) || {};
 
     if (!post || Object.keys(post).length < 1) {
         return {

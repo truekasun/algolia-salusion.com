@@ -7,19 +7,9 @@ const IndexFactory = require('../');
 
 describe('IndexFactory', function () {
     let sandbox;
-    let mockIndex;
 
     beforeEach(function () {
         sandbox = sinon.createSandbox();
-
-        // Mocking algoliasearch client and index
-        mockIndex = {
-            setSettings: sandbox.stub(),
-            getSettings: sandbox.stub(),
-            saveObjects: sandbox.stub(),
-            deleteBy: sandbox.stub(),
-            deleteObjects: sandbox.stub()
-        };
     });
 
     afterEach(function () {
@@ -29,23 +19,28 @@ describe('IndexFactory', function () {
     function createMockedAlgoliaIndex(settings) {
         const algoliaIndex = new IndexFactory(settings);
 
-        // Immediately stub the initClient and initIndex methods after instantiation
+        // In Algolia v5, there is no separate index object — all methods
+        // are called directly on the client with indexName as a parameter.
+        const mockClient = {
+            setSettings: sandbox.stub().resolves(),
+            getSettings: sandbox.stub().resolves({some: 'settings'}),
+            saveObjects: sandbox.stub().resolves(),
+            deleteBy: sandbox.stub().resolves(),
+            deleteObjects: sandbox.stub().resolves()
+        };
+
+        // Stub initClient to inject our mock client
         sandbox.stub(algoliaIndex, 'initClient').callsFake(function () {
-            this.client = {}; // You can mock further if needed
+            this.client = mockClient;
         });
 
-        sandbox.stub(algoliaIndex, 'initIndex').callsFake(async function () {
-            this.initClient();
-            this.index = mockIndex;
-        });
-
-        return algoliaIndex;
+        return {algoliaIndex, mockClient};
     }
 
     it('throws error when settings are not passed', async function () {
         let algoliaIndex;
         try {
-            algoliaIndex = await createMockedAlgoliaIndex();
+            algoliaIndex = new IndexFactory();
         } catch (error) {
             should.exist(error);
             should.not.exist(algoliaIndex);
@@ -55,35 +50,32 @@ describe('IndexFactory', function () {
 
     describe('setSettingsForIndex', function () {
         it('updates settings by default', async function () {
-            const algoliaIndex = await createMockedAlgoliaIndex({appId: 'test', apiKey: 'test', index: 'ALGOLIA'});
-
-            mockIndex.getSettings.resolves({some: 'settings'}); // Provide a mocked response for getSettings
+            const {algoliaIndex, mockClient} = createMockedAlgoliaIndex({appId: 'test', apiKey: 'test', index: 'ALGOLIA'});
 
             const settings = await algoliaIndex.setSettingsForIndex();
 
-            mockIndex.setSettings.should.have.been.called;
-            mockIndex.getSettings.should.have.been.called;
+            mockClient.setSettings.should.have.been.calledOnce;
+            mockClient.setSettings.firstCall.args[0].should.have.property('indexName', 'ALGOLIA');
+            mockClient.getSettings.should.have.been.calledOnce;
 
             should.exist(settings);
         });
 
         it('does not update Algolia settings when set to false', async function () {
-            const algoliaIndex = await createMockedAlgoliaIndex({appId: 'test', apiKey: 'test', index: 'ALGOLIA'});
-
-            mockIndex.getSettings.resolves({some: 'settings'}); // Provide a mocked response for getSettings
+            const {algoliaIndex, mockClient} = createMockedAlgoliaIndex({appId: 'test', apiKey: 'test', index: 'ALGOLIA'});
 
             const settings = await algoliaIndex.setSettingsForIndex({updateSettings: false});
 
-            mockIndex.setSettings.should.have.not.been.called;
-            mockIndex.getSettings.should.have.been.called;
+            mockClient.setSettings.should.have.not.been.called;
+            mockClient.getSettings.should.have.been.calledOnce;
 
             should.exist(settings);
         });
 
         it('throws AlgoliaError when an error occurs', async function () {
-            const algoliaIndex = await createMockedAlgoliaIndex({appId: 'test', apiKey: 'test', index: 'ALGOLIA'});
+            const {algoliaIndex, mockClient} = createMockedAlgoliaIndex({appId: 'test', apiKey: 'test', index: 'ALGOLIA'});
 
-            mockIndex.getSettings.rejects(new Error('Test Error')); // Simulating an error
+            mockClient.getSettings.rejects(new Error('Test Error')); // Simulating an error
 
             try {
                 await algoliaIndex.setSettingsForIndex();
@@ -94,5 +86,59 @@ describe('IndexFactory', function () {
         });
     });
 
-    // TODO: Add tests for the other methods like save, delete, deleteObjects, etc.
+    describe('save', function () {
+        it('calls saveObjects with indexName and objects', async function () {
+            const {algoliaIndex, mockClient} = createMockedAlgoliaIndex({appId: 'test', apiKey: 'test', index: 'ALGOLIA'});
+            await algoliaIndex.initIndex();
+
+            const fragments = [{objectID: '1', title: 'Test'}];
+            await algoliaIndex.save(fragments);
+
+            mockClient.saveObjects.should.have.been.calledOnce;
+            mockClient.saveObjects.firstCall.args[0].should.deepEqual({
+                indexName: 'ALGOLIA',
+                objects: fragments
+            });
+        });
+    });
+
+    describe('delete', function () {
+        it('calls deleteBy with indexName and filters', async function () {
+            const {algoliaIndex, mockClient} = createMockedAlgoliaIndex({appId: 'test', apiKey: 'test', index: 'ALGOLIA'});
+            await algoliaIndex.initIndex();
+
+            await algoliaIndex.delete('test-slug');
+
+            mockClient.deleteBy.should.have.been.calledOnce;
+            mockClient.deleteBy.firstCall.args[0].should.deepEqual({
+                indexName: 'ALGOLIA',
+                deleteByParams: {filters: 'slug:test-slug'}
+            });
+        });
+    });
+
+    describe('deleteObjects', function () {
+        it('calls deleteObjects with indexName and objectIDs', async function () {
+            const {algoliaIndex, mockClient} = createMockedAlgoliaIndex({appId: 'test', apiKey: 'test', index: 'ALGOLIA'});
+            await algoliaIndex.initIndex();
+
+            const fragments = [{objectID: 'id1'}, {objectID: 'id2'}];
+            await algoliaIndex.deleteObjects(fragments);
+
+            mockClient.deleteObjects.should.have.been.calledOnce;
+            mockClient.deleteObjects.firstCall.args[0].should.deepEqual({
+                indexName: 'ALGOLIA',
+                objectIDs: ['id1', 'id2']
+            });
+        });
+
+        it('handles string objectIDs', async function () {
+            const {algoliaIndex, mockClient} = createMockedAlgoliaIndex({appId: 'test', apiKey: 'test', index: 'ALGOLIA'});
+            await algoliaIndex.initIndex();
+
+            await algoliaIndex.deleteObjects(['id1', 'id2']);
+
+            mockClient.deleteObjects.firstCall.args[0].objectIDs.should.deepEqual(['id1', 'id2']);
+        });
+    });
 });

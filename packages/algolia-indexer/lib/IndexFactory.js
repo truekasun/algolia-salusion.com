@@ -1,4 +1,4 @@
-const algoliaSearch = require('algoliasearch');
+const {algoliasearch} = require('algoliasearch');
 
 // Any defined settings will override those in the algolia UI
 // TODO: make this a custom setting
@@ -70,7 +70,7 @@ class IndexFactory {
         if (!algoliaSettings.apiKey || !algoliaSettings.appId || !algoliaSettings.index || algoliaSettings.index.length < 1) {
             throw new Error('Algolia appId, apiKey, and index is required!'); // eslint-disable-line
         }
-        this.index = [];
+        this.indexName = algoliaSettings.index;
         this.options = algoliaSettings;
 
         this.options.indexSettings = algoliaSettings.indexSettings || REQUIRED_SETTINGS;
@@ -80,15 +80,18 @@ class IndexFactory {
      * @returns {void}
      */
     initClient() {
-        this.client = algoliaSearch(this.options.appId, this.options.apiKey);
+        this.client = algoliasearch(this.options.appId, this.options.apiKey);
     }
 
     /**
+     * Initializes the client. In Algolia JS Client v5, there is no
+     * separate index object — all methods are called directly on the
+     * client with indexName as a parameter.
+     *
      * @returns {Promise<void>}
      */
     async initIndex() {
         this.initClient();
-        this.index = await this.client.initIndex(this.options.index);
     }
 
     /**
@@ -102,9 +105,12 @@ class IndexFactory {
         try {
             await this.initIndex();
             if (options.updateSettings) {
-                await this.index.setSettings(this.options.indexSettings);
+                await this.client.setSettings({
+                    indexName: this.indexName,
+                    indexSettings: this.options.indexSettings
+                });
             }
-            return await this.index.getSettings();
+            return await this.client.getSettings({indexName: this.indexName});
         } catch (error) {
             throw AlgoliaError({code: error.code, statusCode: error.status, originalError: error});
         }
@@ -117,7 +123,10 @@ class IndexFactory {
     async save(fragments) {
         console.log(`Saving ${fragments.length} fragments to Algolia index...`); // eslint-disable-line no-console
         try {
-            await this.index.saveObjects(fragments);
+            await this.client.saveObjects({
+                indexName: this.indexName,
+                objects: fragments
+            });
         } catch (error) {
             throw AlgoliaError({code: error.code, statusCode: error.status, originalError: error});
         }
@@ -130,7 +139,10 @@ class IndexFactory {
     async delete(slug) {
         console.log(`Removing all fragments with post slug "${slug}"...`); // eslint-disable-line no-console
         try {
-            await this.index.deleteBy({filters: `slug:${slug}`});
+            await this.client.deleteBy({
+                indexName: this.indexName,
+                deleteByParams: {filters: `slug:${slug}`}
+            });
         } catch (error) {
             throw AlgoliaError({code: error.code, statusCode: error.status, originalError: error});
         }
@@ -143,7 +155,11 @@ class IndexFactory {
     async deleteObjects(fragments) {
         console.log(`Deleting ${fragments.length} fragments from Algolia index...`); // eslint-disable-line no-console
         try {
-            await this.index.deleteObjects(fragments);
+            const objectIDs = fragments.map(f => typeof f === 'string' ? f : f.objectID);
+            await this.client.deleteObjects({
+                indexName: this.indexName,
+                objectIDs
+            });
         } catch (error) {
             throw AlgoliaError({code: error.code, statusCode: error.status, originalError: error});
         }

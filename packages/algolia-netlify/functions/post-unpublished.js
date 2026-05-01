@@ -18,7 +18,8 @@ exports.handler = async (event) => {
         };
     }
 
-    if (!event.headers['user-agent'].includes('https://github.com/TryGhost/Ghost')) {
+    const userAgent = event.headers['user-agent'] || '';
+    if (!userAgent.includes('https://github.com/TryGhost/Ghost')) {
         return {
             statusCode: 401,
             body: `Unauthorized`
@@ -33,16 +34,28 @@ exports.handler = async (event) => {
 
     const {post} = JSON.parse(event.body);
 
+    // Handle both Ghost v4 (object) and v5 (array) payload formats
     // Updated posts are in `post.current`, deleted are in `post.previous`
-    const {slug} = (post.current && Object.keys(post.current).length && post.current)
-                   || (post.previous && Object.keys(post.previous).length && post.previous);
+    let current = post?.current;
+    let previous = post?.previous;
+    if (Array.isArray(current)) {
+        current = current[0];
+    }
+    if (Array.isArray(previous)) {
+        previous = previous[0];
+    }
 
-    if (!slug) {
+    const source = (current && Object.keys(current).length && current)
+                   || (previous && Object.keys(previous).length && previous);
+
+    if (!source || !source.slug) {
         return {
             statusCode: 200,
             body: `No valid request body detected`
         };
     }
+
+    const {slug} = source;
 
     try {
         // Instanciate the Algolia indexer, which connects to Algolia and

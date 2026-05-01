@@ -60,7 +60,7 @@ prettyCLI.command({
             const ghost = new GhostContentAPI({
                 url: context.ghost.apiUrl,
                 key: context.ghost.apiKey,
-                version: 'canary'
+                version: 'v5.0'
             });
 
             if (argv.skip && argv.skip.length > 0) {
